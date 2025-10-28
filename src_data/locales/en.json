@@ -29,7 +29,10 @@
       "wait": "Please wait...",
       "uploading": "Uploading...",
       "success": "Success",
-      "error": "Error"
+      "error": "Error",
+      "checkForUpdates": "Check for Updates",
+      "updateNow": "Update Now",
+      "factoryReset": "Perform Factory Reset"     
     },
 
     "index": {
@@ -492,12 +495,19 @@
         "backupAndRestore": "Backup & restore",
         "backupAndRestore.desc": "In this section you can save and restore a backup of ALL settings.",
         "upgrade": "Upgrade",
-        "upgrade.desc": "In this section you can upgrade the firmware and filesystem of your device.<br />Latest releases can be downloaded from the <a href=\"https://github.com/Laxilef/OTGateway/releases\" target=\"_blank\">Releases page</a> of the project repository." 
+        "upgrade.desc": "In this section you can upgrade the firmware and filesystem of your device.<br />Latest releases can be downloaded from the <a href=\"https://github.com/Laxilef/OTGateway/releases\" target=\"_blank\">Releases page</a> of the project repository.",
+        "factoryReset": "Factory Reset",
+        "factoryReset.desc": "In this section you can restore the device to Factory Settings.",
+        "ota": "Online Upgrade",
+        "ota.desc": "Check for the latest firmware from GitHub and upgrade automatically.",
+        "ota.currentVersion": "Current Version",
+        "ota.latestVersion": "Latest Version"
       },
 
       "note": {
         "disclaimer1": "After a successful upgrade the filesystem, ALL settings will be reset to default values! Save backup before upgrading.",
-        "disclaimer2": "After a successful upgrade, the device will automatically reboot after 15 seconds."
+        "disclaimer2": "After a successful upgrade, the device will automatically reboot after 15 seconds.",
+        "factoryResetWarning": "WARNING: This action is irreversible and will erase all your settings."
       },
 
       "settingsFile": "Settings file",
