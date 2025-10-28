@@ -2,11 +2,11 @@
 name: Build and Release All Firmware Types
 
 on:
-#  push:
-#    branches:
-#      - main
-#  release:
-#    types: [published]
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
   workflow_dispatch:
   repository_dispatch:
 
@@ -100,4 +100,5 @@ jobs:
           overwrite: true
 
           file_glob: true
+
 
