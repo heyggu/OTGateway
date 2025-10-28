@@ -15,6 +15,9 @@ using WebServer = ESP8266WebServer;
 #include <DynamicPage.h>
 #include <UpgradeHandler.h>
 #include <DNSServer.h>
+//Online_OTA & Factory
+#include <LittleFS.h>
+#include <HTTPClient.h> 
 
 using namespace NetworkUtils;
 
@@ -219,6 +222,36 @@ protected:
     });
     this->webServer->addHandler(upgradeHandler);
 
+    // 返回当前固件版本
+    this->webServer->on(F("/api/version"), HTTP_GET, [this]() {
+        String json = "{\"version\":\"";
+        json += BUILD_VERSION;
+        json += "\"}";
+        this->webServer->send(200, F("application/json"), json);
+    });
+
+    // Online_ota_upgrade
+    this->webServer->on(F("/api/ota_upgrade"), HTTP_POST, [this]() {
+        if (this->isAuthRequired() && !this->isValidCredentials()) { return this->webServer->send(401); }
+        if (!this->webServer->hasArg("plain")) { return this->webServer->send(400); }
+        String body = this->webServer->arg("plain");
+        JsonDocument doc;
+        if (deserializeJson(doc, body) != DeserializationError::Ok) { return this->webServer->send(400); }
+        const char* url = doc["url"];
+        if (url == nullptr) { return this->webServer->send(400); }
+        this->webServer->send(200, F("application/json"), F("{\"status\":\"Update initiated\"}"));
+        performOtaUpdate(String(url));
+    });
+
+    // 格式化文件系统并重启
+    this->webServer->on(F("/api/factory/reset"), HTTP_POST, [this]() {
+        if (this->isAuthRequired() && !this->isValidCredentials()) {
+            return this->webServer->send(401);
+        }
+        this->webServer->send(200, F("application/json"), F("{\"status\":\"Factory reset initiated\"}"));
+        LittleFS.format(); // 格式化文件系统
+        ESP.restart();     // 重启设备
+    });
 
     // backup
     this->webServer->on(F("/api/backup/save"), HTTP_GET, [this]() {
