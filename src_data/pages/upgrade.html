@@ -53,6 +53,37 @@
         </div>
       </article>
 
+      <!-- ============== 新增恢复出厂设置 (Factory Reset) ============== -->
+      <article>
+        <div>
+          <hgroup>
+            <h2 data-i18n>upgrade.section.factoryReset</h2>
+            <p data-i18n>upgrade.section.factoryReset.desc</p>
+          </hgroup>
+          <p><mark data-i18n>upgrade.note.factoryResetWarning</mark></p>
+          <button id="factory-reset-btn" class="secondary outline" data-i18n>button.factoryReset</button>
+        </div>
+      </article>
+      <!-- ========================== END: 恢复出厂设置 ========================== -->
+       <!-- ====================== 增加OTA ====================== -->
+      <article>
+        <div>
+          <hgroup>
+            <h2 data-i18n>upgrade.section.ota</h2>
+            <p data-i18n>upgrade.section.ota.desc</p>
+          </hgroup>
+          <div class="grid">
+            <div><span data-i18n>upgrade.ota.currentVersion</span>: <strong id="current-version">Loading...</strong></div>
+            <div><span data-i18n>upgrade.ota.latestVersion</span>: <strong id="latest-version">N/A</strong></div>
+          </div>
+          <p id="update-status" class="hidden" style="margin-top: 1rem;"></p>
+          <div role="group">
+            <button id="check-update-btn" data-i18n>button.checkForUpdates</button>
+            <button id="perform-update-btn" class="contrast hidden" data-i18n>button.updateNow</button>
+          </div>
+        </div>
+      </article>
+      <!-- ====================== END: OTA ====================== -->
       <article>
         <div>
           <hgroup>
@@ -109,7 +140,94 @@
 
         setupRestoreBackupForm('#restore');
         setupUpgradeForm('#upgrade');
+        //增加相关函数
+        setupOnlineUpdate();
+        setupFactoryReset();
       });
+      
+      // ==== OTA 函数 ====
+      function setupOnlineUpdate() {
+        const checkBtn = document.getElementById('check-update-btn');
+        const updateBtn = document.getElementById('perform-update-btn');
+        const statusEl = document.getElementById('update-status');
+        const currentVersionEl = document.getElementById('current-version');
+        const latestVersionEl = document.getElementById('latest-version');
+        let firmwareUrl = '';
+        const fetchCurrentVersion = async () => {
+          try {
+            const response = await fetch('/api/version');
+            if (!response.ok) throw new Error('Failed to get current version');
+            const data = await response.json();
+            currentVersionEl.textContent = data.version || 'Unknown';
+          } catch (error) { console.error(error); currentVersionEl.textContent = 'Error'; statusEl.classList.remove('hidden'); statusEl.textContent = 'Could not retrieve current version from device.'; }
+        };
+        fetchCurrentVersion();
+        checkBtn.addEventListener('click', async () => {
+          statusEl.classList.remove('hidden'); statusEl.textContent = 'Checking for updates...'; checkBtn.setAttribute('aria-busy', 'true'); updateBtn.classList.add('hidden'); latestVersionEl.textContent = 'N/A';
+          try {
+            const response = await fetch('https://api.github.com/repos/Laxilef/OTGateway/releases/latest');
+            if (!response.ok) throw new Error('Failed to fetch from GitHub API');
+            const latestRelease = await response.json();
+            const latestVersion = latestRelease.tag_name;
+            latestVersionEl.textContent = latestVersion;
+            const currentVersion = currentVersionEl.textContent;
+            if (latestVersion && currentVersion !== 'Error' && latestVersion !== currentVersion) {
+                const firmwareAsset = latestRelease.assets.find(asset => asset.name.endsWith('.bin') && !asset.name.includes('fs') && !asset.name.includes('factory'));
+                if(firmwareAsset) {
+                    firmwareUrl = firmwareAsset.browser_download_url;
+                    statusEl.innerHTML = `New version available: <strong>${latestVersion}</strong>. <a href="${latestRelease.html_url}" target="_blank">View Release Notes</a>`;
+                    updateBtn.classList.remove('hidden');
+                } else { statusEl.textContent = 'New version found, but a suitable firmware file was not located.'; }
+            } else if (latestVersion === currentVersion) { statusEl.textContent = 'You are using the latest version.';
+            } else { statusEl.textContent = 'Could not determine update status.'; }
+          } catch (error) { console.error(error); statusEl.textContent = 'Error checking for updates. Please check your network connection.';
+          } finally { checkBtn.setAttribute('aria-busy', 'false'); }
+        });
+        updateBtn.addEventListener('click', async () => {
+            if (!firmwareUrl) { alert('Firmware download URL is missing.'); return; }
+            if (!confirm(`Are you sure you want to upgrade? The device will restart.`)) { return; }
+            updateBtn.setAttribute('aria-busy', 'true'); updateBtn.disabled = true; checkBtn.disabled = true; statusEl.textContent = 'Update in progress... Please do not power off the device.';
+            try {
+                const response = await fetch('/api/ota_upgrade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: firmwareUrl }), });
+                if (response.ok) { statusEl.textContent = 'Update started successfully! The device is now rebooting.';
+                } else { const errorData = await response.text(); throw new Error(errorData || 'Update failed on the device.'); }
+            } catch (error) { console.error(error); statusEl.textContent = `An error occurred: ${error.message}`; updateBtn.setAttribute('aria-busy', 'false'); updateBtn.disabled = false; checkBtn.disabled = false; }
+        });
+      }
+
+      // ============ 恢复出厂设置 函数 =============
+      function setupFactoryReset() {
+        const resetBtn = document.getElementById('factory-reset-btn');
+        if (!resetBtn) return;
+
+        resetBtn.addEventListener('click', async () => {
+          if (!confirm("WARNING: This will erase all your settings, including Wi-Fi credentials. The device will restart. Are you absolutely sure?")) {
+            return;
+          }
+          if (!confirm("FINAL CONFIRMATION: Proceed with factory reset?")) {
+            return;
+          }
+
+          resetBtn.setAttribute('aria-busy', 'true');
+          resetBtn.disabled = true;
+          resetBtn.textContent = 'Resetting...';
+
+          try {
+            const response = await fetch('/api/factory/reset', { method: 'POST' });
+            if (response.ok) {
+              alert('Factory reset initiated. The device will now reboot.');
+            } else {
+              throw new Error('Failed to initiate factory reset on the device.');
+            }
+          } catch (error) {
+            console.error(error);
+            alert(`An error occurred: ${error.message}`);
+            resetBtn.setAttribute('aria-busy', 'false');
+            resetBtn.disabled = false;
+            resetBtn.textContent = 'Factory Reset';
+          }
+        });
+      }
     </script>
   </body>
 </html>
