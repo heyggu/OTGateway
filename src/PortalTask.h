@@ -251,7 +251,9 @@ protected:
             return this->webServer->send(401);
         }
         this->webServer->send(200, F("application/json"), F("{\"status\":\"Factory reset initiated\"}"));
-        LittleFS.format(); // 格式化文件系统
+        LittleFS.remove("/network.json");
+        LittleFS.remove("/settings.json");
+        LittleFS.remove("/sensors.json");
         ESP.restart();     // 重启设备
     });
 
