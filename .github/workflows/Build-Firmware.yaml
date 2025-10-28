@@ -82,6 +82,14 @@ jobs:
           find all_builds -type f -exec mv {} final_release_assets/ \;
           echo "Final assets for release:"
           ls -lR final_release_assets
+          
+      - name: Remove ELF files from build directory
+        run: |
+          echo "Files in build directory before removal:"
+          ls -l build/
+          rm -f build/*.elf
+          echo "Files in build directory after removal:"
+          ls -l build/
 
       - name: Upload all assets to Release
         uses: svenstaro/upload-release-action@v2
@@ -90,4 +98,5 @@ jobs:
           file: final_release_assets/*
           tag: ${{ github.ref }}
           overwrite: true
+
           file_glob: true
