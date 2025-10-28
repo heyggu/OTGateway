@@ -59,6 +59,8 @@ protected:
   bool dnsServerEnabled = false;
   unsigned long webServerChangeState = 0;
   bool mDnsState = false;
+  
+  void performOtaUpdate(String url);
 
   #if defined(ARDUINO_ARCH_ESP32)
   const char* getTaskName() override {
@@ -240,7 +242,7 @@ protected:
         const char* url = doc["url"];
         if (url == nullptr) { return this->webServer->send(400); }
         this->webServer->send(200, F("application/json"), F("{\"status\":\"Update initiated\"}"));
-        performOtaUpdate(String(url));
+        this->performOtaUpdate(String(url));
     });
 
     // 格式化文件系统并重启
@@ -1080,3 +1082,36 @@ protected:
     this->dnsServerEnabled = false;
   }
 };
+//
+void PortalTask::performOtaUpdate(String url) {
+  HTTPClient http;
+  http.begin(url);
+  int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    http.end();
+    return;
+  }
+  int contentLength = http.getSize();
+  if (contentLength <= 0) {
+    http.end();
+    return;
+  }
+  bool canBegin = Update.begin(contentLength);
+  if (!canBegin) {
+    http.end();
+    return;
+  }
+  WiFiClient& stream = http.getStream();
+  size_t written = Update.writeStream(stream);
+  if (written != contentLength) {
+    Update.abort();
+    http.end();
+    return;
+  }
+  if (!Update.end()) {
+    Update.abort();
+    http.end();
+    return;
+  }
+  ESP.restart();
+}
