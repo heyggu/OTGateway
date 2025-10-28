@@ -37,7 +37,7 @@ jobs:
       - name: Prepare Artifacts
         run: |
           mkdir -p firmware
-          cp .pio/build/esp32/firmware.bin firmware/OTGateway-s3-mini.bin
+          cp .pio/build/s3_mini/firmware.bin firmware/OTGateway-s3-mini.bin
           ls -l firmware
 
       - name: Upload Firmware Artifacts (for Push events)
@@ -57,4 +57,5 @@ jobs:
           overwrite: true
 
           file_glob: true
+
 
