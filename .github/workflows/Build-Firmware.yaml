@@ -1,0 +1,93 @@
+# GitHub Actions 工作流的名称
+name: Build and Release All Firmware Types
+
+on:
+#  push:
+#    branches:
+#      - main
+#  release:
+#    types: [published]
+  workflow_dispatch:
+  repository_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+#          - d1_mini
+#          - d1_mini_lite
+#          - d1_mini_pro
+#          - nodemcu_8266
+#          - s2_mini
+          - s3_mini
+#          - c3_mini
+#          - nodemcu_32
+#          - nodemcu_32_160mhz
+#          - d1_mini32
+#          - esp32_c6
+#          - otthing
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Cache PlatformIO directories
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            .pio/libdeps
+          key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}
+
+      - name: Run the complete build process for ${{ matrix.env }}
+        run: platformio run -e ${{ matrix.env }}
+
+      - name: Upload firmware artifacts for ${{ matrix.env }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-${{ matrix.env }}
+          path: build/
+          retention-days: 5
+
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all build outputs
+        uses: actions/download-artifact@v4
+        with:
+          path: all_builds
+
+      - name: Prepare final release assets
+        run: |
+          mkdir final_release_assets
+          find all_builds -type f -exec mv {} final_release_assets/ \;
+          echo "Final assets for release:"
+          ls -lR final_release_assets
+
+      - name: Upload all assets to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: final_release_assets/*
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
