@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.14'
 
       - name: Install PlatformIO
         run: pip install -U platformio
@@ -57,3 +57,4 @@ jobs:
           overwrite: true
 
           file_glob: true
+
