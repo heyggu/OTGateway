@@ -31,13 +31,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-platformio-
 
-      - name: Build Firmware for ESP32-s3
-        run: platformio run -e esp32-s3
+      - name: Build Firmware for ESP32-s3-mini
+        run: platformio run -e s3_mini
 
       - name: Prepare Artifacts
         run: |
           mkdir -p firmware
-          cp .pio/build/esp32/firmware.bin firmware/OTGateway-esp32-s3.bin
+          cp .pio/build/esp32/firmware.bin firmware/OTGateway-s3-mini.bin
           ls -l firmware
 
       - name: Upload Firmware Artifacts (for Push events)
@@ -55,4 +55,5 @@ jobs:
           file: firmware/*
           tag: ${{ github.ref }}
           overwrite: true
+
           file_glob: true
