@@ -29,7 +29,10 @@
       "wait": "请等待...",
       "uploading": "上传中...",
       "success": "成功",
-      "error": "错误"
+      "error": "错误",
+      "checkForUpdates": "检查更新",
+      "updateNow": "立即更新",
+      "factoryReset": "执行恢复出厂设置"
     },
 
     "index": {
@@ -492,12 +495,19 @@
         "backupAndRestore": "备份与恢复",
         "backupAndRestore.desc": "本功能支持备份和恢复全部设置",
         "upgrade": "升级",
-        "upgrade.desc": "本模块支持升级设备的固件与系统文件。<br />可从以下地址下载最新版本 <a href=\"https://github.com/Laxilef/OTGateway/releases\" target=\"_blank\">Releases page</a> 。" 
+        "upgrade.desc": "本模块支持升级设备的固件与系统文件。<br />可从以下地址下载最新版本 <a href=\"https://github.com/Laxilef/OTGateway/releases\" target=\"_blank\">Releases page</a> 。" ,
+        "factoryReset": "恢复出厂设置",
+        "factoryReset.desc": "这将清除设备中的所有配置，包括 Wi-Fi 设置。",
+        "ota": "在线更新固件",
+        "ota.desc": "从 GitHub 检查最新固件并自动升级。",
+        "ota.currentVersion": "当前版本",
+        "ota.latestVersion": "最新版本"
       },
 
       "note": {
         "disclaimer1": "升级系统文件成功后，所有设置将恢复为默认值！升级前请务必备份配置。",
-        "disclaimer2": "升级成功后，设备将在15秒后自动重启。"
+        "disclaimer2": "升级成功后，设备将在15秒后自动重启。",
+        "factoryResetWarning": "警告：此操作不可逆，并将清除您的所有设置。"
       },
 
       "settingsFile": "设置文件",
