@@ -147,52 +147,119 @@
       
       // ==== OTA 函数 ====
       function setupOnlineUpdate() {
-        const checkBtn = document.getElementById('check-update-btn');
-        const updateBtn = document.getElementById('perform-update-btn');
-        const statusEl = document.getElementById('update-status');
-        const currentVersionEl = document.getElementById('current-version');
-        const latestVersionEl = document.getElementById('latest-version');
-        let firmwareUrl = '';
-        const fetchCurrentVersion = async () => {
-          try {
-            const response = await fetch('/api/version');
-            if (!response.ok) throw new Error('Failed to get current version');
-            const data = await response.json();
-            currentVersionEl.textContent = data.version || 'Unknown';
-          } catch (error) { console.error(error); currentVersionEl.textContent = 'Error'; statusEl.classList.remove('hidden'); statusEl.textContent = 'Could not retrieve current version from device.'; }
-        };
-        fetchCurrentVersion();
-        checkBtn.addEventListener('click', async () => {
-          statusEl.classList.remove('hidden'); statusEl.textContent = 'Checking for updates...'; checkBtn.setAttribute('aria-busy', 'true'); updateBtn.classList.add('hidden'); latestVersionEl.textContent = 'N/A';
-          try {
-            const response = await fetch('https://api.github.com/repos/heyggu/OTGateway/releases/latest');
-            if (!response.ok) throw new Error('Failed to fetch from GitHub API');
-            const latestRelease = await response.json();
-            const latestVersion = latestRelease.tag_name;
-            latestVersionEl.textContent = latestVersion;
-            const currentVersion = currentVersionEl.textContent;
-            if (latestVersion && currentVersion !== 'Error' && latestVersion !== currentVersion) {
-                const firmwareAsset = latestRelease.assets.find(asset => asset.name.endsWith('.bin') && !asset.name.includes('fs') && !asset.name.includes('factory'));
-                if(firmwareAsset) {
-                    firmwareUrl = firmwareAsset.browser_download_url;
-                    statusEl.innerHTML = `New version available: <strong>${latestVersion}</strong>. <a href="${latestRelease.html_url}" target="_blank">View Release Notes</a>`;
-                    updateBtn.classList.remove('hidden');
-                } else { statusEl.textContent = 'New version found, but a suitable firmware file was not located.'; }
-            } else if (latestVersion === currentVersion) { statusEl.textContent = 'You are using the latest version.';
-            } else { statusEl.textContent = 'Could not determine update status.'; }
-          } catch (error) { console.error(error); statusEl.textContent = 'Error checking for updates. Please check your network connection.';
-          } finally { checkBtn.setAttribute('aria-busy', 'false'); }
-        });
-        updateBtn.addEventListener('click', async () => {
-            if (!firmwareUrl) { alert('Firmware download URL is missing.'); return; }
-            if (!confirm(`Are you sure you want to upgrade? The device will restart.`)) { return; }
-            updateBtn.setAttribute('aria-busy', 'true'); updateBtn.disabled = true; checkBtn.disabled = true; statusEl.textContent = 'Update in progress... Please do not power off the device.';
-            try {
-                const response = await fetch('/api/ota_upgrade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: firmwareUrl }), });
-                if (response.ok) { statusEl.textContent = 'Update started successfully! The device is now rebooting.';
-                } else { const errorData = await response.text(); throw new Error(errorData || 'Update failed on the device.'); }
-            } catch (error) { console.error(error); statusEl.textContent = `An error occurred: ${error.message}`; updateBtn.setAttribute('aria-busy', 'false'); updateBtn.disabled = false; checkBtn.disabled = false; }
-        });
+      const ui = {
+    checkBtn: document.getElementById('check-update-btn'),
+    updateBtn: document.getElementById('perform-update-btn'),
+    statusEl: document.getElementById('update-status'),
+    currentVersionEl: document.getElementById('current-version'),
+    latestVersionEl: document.getElementById('latest-version'),
+  };
+
+  let state = {
+    firmwareUrl: '',
+    devicePlatform: '',
+    currentVersion: '',
+  };
+
+  const setStatus = (message, isBusy = false) => {
+    ui.statusEl.innerHTML = message;
+    ui.statusEl.classList.remove('hidden');
+    ui.checkBtn.setAttribute('aria-busy', String(isBusy));
+  };
+
+  const showUpdateAvailable = (release) => {
+    setStatus(`New version available: <strong>${release.tag_name}</strong>. <a href="${release.html_url}" target="_blank">View Notes</a>`);
+    ui.updateBtn.classList.remove('hidden');
+  };
+  
+  const hideUpdateControls = () => {
+    ui.updateBtn.classList.add('hidden');
+  };
+
+  const fetchDeviceInfo = async () => {
+    try {
+      const response = await fetch('/api/version');
+      if (!response.ok) throw new Error('Failed to fetch device info');
+      const data = await response.json();
+      state.currentVersion = data.version || 'Unknown';
+      state.devicePlatform = data.platform || '';
+      ui.currentVersionEl.textContent = state.currentVersion;
+      if (!state.devicePlatform) {
+        setStatus('Error: Device platform unknown.');
+      }
+    } catch (error) {
+      console.error(error);
+      ui.currentVersionEl.textContent = 'Error';
+      setStatus('Could not retrieve device info.');
+    }
+  };
+
+  ui.checkBtn.addEventListener('click', async () => {
+    hideUpdateControls();
+    setStatus('Checking for updates...', true);
+    ui.latestVersionEl.textContent = 'N/A';
+    
+    if (!state.devicePlatform) {
+      setStatus('Cannot check: device platform is unknown.');
+      return;
+    }
+
+    try {
+      const response = await fetch('https://api.github.com/repos/heyggu/OTGateway/releases/latest');
+      if (!response.ok) throw new Error('GitHub API fetch failed');
+      const latestRelease = await response.json();
+      ui.latestVersionEl.textContent = latestRelease.tag_name;
+
+      if (latestRelease.tag_name === state.currentVersion) {
+        setStatus('You are using the latest version.');
+        return;
+      }
+      
+      const firmwareAsset = latestRelease.assets.find(asset => {
+        const name = asset.name.toLowerCase();
+        return name.includes(state.devicePlatform.toLowerCase()) && name.includes('firmware') && !name.includes('fs') && !name.includes('factory');
+      });
+
+      if (firmwareAsset) {
+        state.firmwareUrl = firmwareAsset.browser_download_url;
+        showUpdateAvailable(latestRelease);
+      } else {
+        setStatus(`New version found, but a firmware for your device (${state.devicePlatform}) was not located.`);
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus('Error checking for updates.');
+    } finally {
+      ui.checkBtn.setAttribute('aria-busy', 'false');
+    }
+  });
+
+  ui.updateBtn.addEventListener('click', async () => {
+    if (!state.firmwareUrl) { alert('Firmware download URL is missing.'); return; }
+    if (!confirm(`Are you sure you want to upgrade? The device will restart.`)) { return; }
+    
+    ui.updateBtn.setAttribute('aria-busy', 'true');
+    ui.updateBtn.disabled = true;
+    ui.checkBtn.disabled = true;
+    setStatus('Update in progress... Please do not power off the device.');
+
+    try {
+      const response = await fetch('/api/ota_upgrade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: state.firmwareUrl }) });
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(errorData || 'Update failed on the device.');
+      }
+      setStatus('Update started successfully! The device is now rebooting.');
+    } catch (error) {
+      console.error(error);
+      setStatus(`An error occurred: ${error.message}`);
+      ui.updateBtn.setAttribute('aria-busy', 'false');
+      ui.updateBtn.disabled = false;
+      ui.checkBtn.disabled = false;
+    }
+  });
+
+  fetchDeviceInfo();
       }
 
       // ============ 恢复出厂设置 函数 =============
