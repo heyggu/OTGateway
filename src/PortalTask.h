@@ -5,6 +5,7 @@
 #include <ESP8266WebServer.h>
 #include <Updater.h>
 using WebServer = ESP8266WebServer;
+#include <BearSSLHelpers.h>
 #else
 #include <ESPmDNS.h>
 #include <WebServer.h>
