@@ -222,12 +222,6 @@ void setup() {
   tMain = new MainTask(true, 100);
   Scheduler.start(tMain);
 
-  Scheduler.start(new LeanTask(true, 0, []() {
-    if (telnetStream != nullptr) {
-      telnetStream->loop();
-    }
-  }));
-
   Scheduler.begin();
 }
 
