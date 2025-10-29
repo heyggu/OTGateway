@@ -500,8 +500,8 @@
         "factoryReset.desc": "In this section you can restore the device to Factory Settings.",
         "ota": "Online Upgrade",
         "ota.desc": "Check for the latest firmware from GitHub and upgrade automatically.",
-        "ota.currentVersion": "Current Version",
-        "ota.latestVersion": "Latest Version"
+        "currentVersion": "Current Version",
+        "latestVersion": "Latest Version"
       },
 
       "note": {
