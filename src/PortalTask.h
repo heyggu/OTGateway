@@ -228,6 +228,8 @@ protected:
     this->webServer->on(F("/api/version"), HTTP_GET, [this]() {
         String json = "{\"version\":\"";
         json += BUILD_VERSION;
+        json += "\", \"platform\":\"";
+        json += BUILD_ENV;
         json += "\"}";
         this->webServer->send(200, F("application/json"), json);
     });
@@ -245,15 +247,14 @@ protected:
         this->performOtaUpdate(String(url));
     });
 
-    // 格式化文件系统并重启
     this->webServer->on(F("/api/factory/reset"), HTTP_POST, [this]() {
         if (this->isAuthRequired() && !this->isValidCredentials()) {
             return this->webServer->send(401);
         }
         this->webServer->send(200, F("application/json"), F("{\"status\":\"Factory reset initiated\"}"));
-        LittleFS.remove("/network.json");
-        LittleFS.remove("/settings.json");
-        LittleFS.remove("/sensors.json");
+        LittleFS.remove("/network.conf");
+        LittleFS.remove("/settings.conf");
+        LittleFS.remove("/sensors.conf");
         ESP.restart();     // 重启设备
     });
 
@@ -1086,34 +1087,88 @@ protected:
 };
 //
 void PortalTask::performOtaUpdate(String url) {
+  Serial.println("\n======= OTA Update Process Started =======");
+  Serial.print("Initial Firmware URL: ");
+  Serial.println(url);
+
   HTTPClient http;
-  http.begin(url);
+  
+  #ifdef ARDUINO_ARCH_ESP8266
+    Serial.println("Platform: ESP8266. Using BearSSL with insecure mode for GitHub redirects.");
+    std::unique_ptr<BearSSL::WiFiClientSecure> client(new BearSSL::WiFiClientSecure);
+    client->setInsecure(); 
+    http.begin(*client, url);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  #else // ARDUINO_ARCH_ESP32
+    Serial.println("Platform: ESP32. Using default secure client.");
+    http.begin(url);
+  #endif
+
+  Serial.println("Sending HTTP GET request...");
   int httpCode = http.GET();
+  
+  if (httpCode > 0 && (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND)) {
+    String newUrl = http.header("Location");
+    Serial.print("Redirect detected. New URL: ");
+    Serial.println(newUrl);
+    http.end();
+    http.begin(newUrl);
+    Serial.println("Sending HTTP GET request to new URL...");
+    httpCode = http.GET();
+  }
+
+  Serial.print("Final HTTP Response Code: ");
+  Serial.println(httpCode);
+
   if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
     http.end();
+    Serial.println("OTA Update FAILED: Could not download file.");
     return;
   }
+
   int contentLength = http.getSize();
+  Serial.print("Content-Length: ");
+  Serial.println(contentLength);
+
   if (contentLength <= 0) {
+    Serial.println("OTA Update FAILED: Content length is 0.");
     http.end();
     return;
   }
+
+  Serial.println("Starting firmware update...");
   bool canBegin = Update.begin(contentLength);
+  
   if (!canBegin) {
+    Serial.println("OTA Update FAILED: Not enough space to begin OTA.");
     http.end();
     return;
   }
-  WiFiClient& stream = http.getStream();
-  size_t written = Update.writeStream(stream);
+
+  WiFiClient* stream = http.getStreamPtr();
+  
+  Serial.println("Writing firmware to flash...");
+  size_t written = Update.writeStream(*stream);
+
+  Serial.print("Bytes written: ");
+  Serial.println(written);
+
   if (written != contentLength) {
+    Serial.printf("OTA Update FAILED: Written size (%d) does not match content length (%d).\n", written, contentLength);
     Update.abort();
     http.end();
     return;
   }
-  if (!Update.end()) {
+
+  Serial.println("Finalizing update...");
+  if (!Update.end(true)) { // true to set the sketch as bootable
+    Serial.printf("Error occurred during update: %u\n", Update.getError());
     Update.abort();
     http.end();
     return;
   }
+  
+  Serial.println("Update successful! Rebooting...");
   ESP.restart();
 }
