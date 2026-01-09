@@ -387,6 +387,121 @@ const setupRestoreBackupForm = (formSelector) => {
   });
 }
 
+/**
+ * Setup Modular Reset Form [ADDITION]
+ */
+const setupResetForm = (formSelector) => {
+  const form = document.querySelector(formSelector);
+  if (!form) return;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const confirmReset = form.querySelector('#confirm-reset');
+    if (confirmReset && !confirmReset.checked) {
+      alert(i18n('msg.confirm_reset_required'));
+      return;
+    }
+
+    if (!confirm(i18n('msg.factory_reset_confirm'))) {
+      return;
+    }
+
+    let button = form.querySelector('button[type="submit"]');
+    let defaultText;
+    if (button) {
+      defaultText = button.textContent;
+      button.textContent = i18n('button.wait');
+      button.setAttribute('disabled', true);
+      button.setAttribute('aria-busy', true);
+    }
+
+    try {
+      const data = {
+        network: form.querySelector('input[name="network"]').checked,
+        settings: form.querySelector('input[name="settings"]').checked,
+        sensors: form.querySelector('input[name="sensors"]').checked
+      };
+
+      const response = await fetch(form.action, {
+        method: "POST",
+        cache: "no-cache",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      if (!response.ok) throw new Error('Reset failed');
+
+      if (button) {
+        button.textContent = i18n('button.success');
+        button.classList.add('success');
+        button.removeAttribute('aria-busy');
+      }
+
+      showRebootOverlay();
+
+    } catch (err) {
+      console.error(err);
+      if (button) {
+        button.textContent = i18n('button.error');
+        button.classList.add('failed');
+        button.removeAttribute('aria-busy');
+        setTimeout(() => {
+          button.removeAttribute('disabled');
+          button.classList.remove('failed');
+          button.textContent = defaultText;
+        }, 5000);
+      }
+    }
+  });
+
+  const fullResetBtn = form.querySelector('#btn-full-reset');
+  if (fullResetBtn) {
+    fullResetBtn.addEventListener('click', () => {
+      form.querySelector('input[name="network"]').checked = true;
+      form.querySelector('input[name="settings"]').checked = true;
+      form.querySelector('input[name="sensors"]').checked = true;
+      form.dispatchEvent(new Event('submit'));
+    });
+  }
+};
+
+/**
+ * Show Reboot Countdown Overlay [ADDITION]
+ */
+const showRebootOverlay = () => {
+  const overlay = document.createElement('div');
+  overlay.id = 'reboot-overlay';
+  overlay.style = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;text-align:center;backdrop-filter:blur(5px);';
+  
+  const title = document.createElement('h2');
+  title.textContent = i18n('msg.rebooting');
+  overlay.appendChild(title);
+  
+  const msg = document.createElement('p');
+  msg.textContent = i18n('msg.reboot_wait');
+  overlay.appendChild(msg);
+
+  const countdown = document.createElement('div');
+  countdown.style = 'font-size:4rem;margin:20px;font-weight:bold;color:#f44336;';
+  overlay.appendChild(countdown);
+
+  document.body.appendChild(overlay);
+
+  let seconds = 15;
+  countdown.textContent = seconds;
+  const timer = setInterval(() => {
+    seconds--;
+    countdown.textContent = seconds;
+    if (seconds <= 0) {
+      clearInterval(timer);
+      window.location.href = '/';
+    }
+  }, 1000);
+};
+
+
 const setupUpgradeForm = (formSelector) => {
   const form = document.querySelector(formSelector);
   if (!form) {

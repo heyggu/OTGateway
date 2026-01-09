@@ -529,7 +529,37 @@
 
       "settingsFile": "Settings file",
       "fw": "Firmware",
-      "fs": "Filesystem"
+      "fs": "Filesystem",
+      "online": {
+        "check": "Check for updates",
+        "checking": "Checking for updates...",
+        "latest": "You have the latest version",
+        "update_available": "New version available: {version}",
+        "btn_update": "Online Update",
+        "warning_fs": "Updating the filesystem will erase ALL settings! Please ensure you have a backup. Do you want to continue?",
+        "downloading": "Downloading...",
+        "uploading": "Uploading...",
+        "env_mismatch": "Environment mismatch",
+        "failed": "Update failed"
+      }
+    },
+
+    "recovery": {
+      "title": "Recovery - OpenTherm Gateway",
+      "name": "Recovery",
+      "reset": {
+        "title": "Modular Reset",
+        "legend": "Select components to reset:",
+        "confirm_checkbox": "I understand that selected settings will be lost.",
+        "btn_modular": "Reset Selected",
+        "btn_full": "Full Factory Reset"
+      }
+    },
+    "msg": {
+      "confirm_reset_required": "Please check the confirmation box to proceed.",
+      "factory_reset_confirm": "Are you sure you want to perform the reset? This action is irreversible.",
+      "rebooting": "Rebooting...",
+      "reboot_wait": "Device is rebooting. Please wait for the countdown."
     }
   }
 }

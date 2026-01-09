@@ -333,6 +333,51 @@ protected:
       this->webServer->send(changed ? 201 : 200);
     });
 
+    // --- FACTORY RESET / MODULAR RESET [ADDITION] ---
+    this->webServer->on(F("/api/reset"), HTTP_POST, [this]() {
+      if (this->isAuthRequired() && !this->isValidCredentials()) {
+        return this->webServer->send(401);
+      }
+
+      if (vars.states.restarting) {
+        return this->webServer->send(503);
+      }
+
+      const String& plain = this->webServer->arg(0);
+      Log.straceln(FPSTR(L_PORTAL_WEBSERVER), F("Request /api/reset %d bytes: %s"), plain.length(), plain.c_str());
+
+      JsonDocument doc;
+      DeserializationError dErr = deserializeJson(doc, plain);
+
+      if (dErr != DeserializationError::Ok || doc.isNull()) {
+        this->webServer->send(400);
+        return;
+      }
+
+      bool changed = false;
+      if (doc[FPSTR(S_NETWORK)].as<bool>()) {
+        fsNetworkSettings.reset();
+        changed = true;
+      }
+
+      if (doc[FPSTR(S_SETTINGS)].as<bool>()) {
+        fsSettings.reset();
+        changed = true;
+      }
+
+      if (doc[FPSTR(S_SENSORS)].as<bool>()) {
+        fsSensorsSettings.reset();
+        changed = true;
+      }
+
+      if (changed) {
+        vars.actions.restart = true;
+      }
+
+      this->webServer->send(changed ? 201 : 200);
+    });
+    // --- END FACTORY RESET / MODULAR RESET ---
+
     // network
     this->webServer->on(F("/api/network/settings"), HTTP_GET, [this]() {
       if (this->isAuthRequired() && !this->isValidCredentials()) {

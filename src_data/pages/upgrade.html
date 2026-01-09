@@ -32,6 +32,47 @@
     </header>
 
     <main class="container">
+      <article id="factory-reset">
+            <div>
+                <hgroup>
+                    <h2 data-i18n>recovery.reset.title</h2>
+                    <p data-i18n>recovery.reset.legend</p>
+                </hgroup>
+
+                <form id="reset-form" action="/api/reset">
+                    <fieldset>
+                        <div class="grid">
+                            <label for="reset-network">
+                                <input type="checkbox" id="reset-network" name="network">
+                                <span data-i18n>network.name</span>
+                            </label>
+                            <label for="reset-settings">
+                                <input type="checkbox" id="reset-settings" name="settings">
+                                <span data-i18n>settings.name</span>
+                            </label>
+                            <label for="reset-sensors">
+                                <input type="checkbox" id="reset-sensors" name="sensors">
+                                <span data-i18n>sensors.name</span>
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <hr />
+
+                    <fieldset>
+                        <label for="confirm-reset">
+                            <input type="checkbox" id="confirm-reset" required>
+                            <span data-i18n>recovery.reset.confirm_checkbox</span>
+                        </label>
+                    </fieldset>
+
+                    <div class="grid">
+                        <button type="submit" class="secondary" data-i18n>recovery.reset.btn_modular</button>
+                        <button type="button" class="contrast" id="btn-full-reset" data-i18n>recovery.reset.btn_full</button>
+                    </div>
+                </form>
+            </div>
+        </article>
       <article>
         <div>
           <hgroup>
@@ -66,6 +107,7 @@
                 <span data-i18n>upgrade.fw</span>:
                 <div class="grid">
                   <input type="file" name="firmware" id="firmware-file" accept=".bin">
+                  <button type="button" id="online-upgrade-fw" class="outline" data-i18n>upgrade.online.check</button>
                   <button type="button" class="upgrade-firmware-result hidden" disabled></button>
                 </div>
               </label>
@@ -74,6 +116,7 @@
                 <span data-i18n>upgrade.fs</span>:
                 <div class="grid">
                   <input type="file" name="filesystem" id="filesystem-file" accept=".bin">
+                   <button type="button" id="online-upgrade-fs" class="outline" data-i18n>upgrade.online.check</button>
                   <button type="button" class="upgrade-filesystem-result hidden" disabled></button>
                 </div>
               </label>
@@ -103,13 +146,150 @@
 
     <script src="/static/app.js?{BUILD_TIME}"></script>
     <script>
-      document.addEventListener('DOMContentLoaded', async () => {
-        const lang = new Lang(document.getElementById('lang'));
-        lang.build();
+        async function setupOnlineUpgrade() {
+          const CONF = {
+        repo: 'heyggu/OTGateway',
+        proxy: 'https://cors.1209177569.workers.dev/?url=',
+        btns: { firmware: document.getElementById('online-upgrade-fw'), filesystem: document.getElementById('online-upgrade-fs') }
+      };
 
-        setupRestoreBackupForm('#restore');
-        setupUpgradeForm('#upgrade');
-      });
+      let env = "", releaseData = null, hasUpdate = false;
+
+      const pFetch = async (u) => {
+        try { const r = await fetch(CONF.proxy + encodeURIComponent(u)); if (r.ok) return r; } catch (e) { }
+        return fetch(u);
+      };
+
+      const updateBtn = (targetBtn, mode, text = '', progress = 0) => {
+        Object.values(CONF.btns).forEach(b => {
+          b.disabled = (mode !== 'idle');
+          if (mode !== 'idle') {
+            if (!targetBtn || b === targetBtn) b.setAttribute('aria-busy', 'true');
+          } else {
+            b.removeAttribute('aria-busy');
+            b.style.backgroundImage = '';
+          }
+        });
+
+        if (targetBtn) {
+          if (text) targetBtn.textContent = text;
+          if (mode === 'progress') {
+            targetBtn.style.backgroundImage = `linear-gradient(to right, rgba(255,255,255,0.3) ${progress}%, transparent ${progress}%)`;
+          }
+        }
+      };
+
+      const check = async () => {
+        updateBtn(null, 'busy');
+        try {
+          const [info, rel] = await Promise.all([
+            fetch('/api/info').then(r => r.json()),
+            pFetch(`https://api.github.com/repos/${CONF.repo}/releases/latest`).then(r => r.json())
+          ]);
+
+          env = info.build?.env;
+          releaseData = rel;
+          const localVer = info.build?.version?.trim();
+          const latestVer = rel.tag_name?.replace(/^v/, '').trim();
+
+          hasUpdate = latestVer && localVer && latestVer !== localVer;
+
+          const tip = hasUpdate
+            ? i18n('upgrade.online.update_available').replace('{version}', latestVer)
+            : i18n('upgrade.online.latest');
+
+          Object.values(CONF.btns).forEach(b => b.textContent = tip);
+          if (hasUpdate) Object.values(CONF.btns).forEach(b => b.classList.remove('outline'));
+
+          updateBtn(null, 'idle');
+        } catch (e) {
+          console.error("Check failed:", e);
+          Object.values(CONF.btns).forEach(b => b.textContent = i18n('button.error'));
+          updateBtn(null, 'idle');
+        }
+      };
+
+      const upgrade = async (type) => {
+        if (type === 'filesystem' && !confirm(i18n('upgrade.online.warning_fs'))) return;
+
+        const btn = CONF.btns[type];
+        const oldTxt = btn.textContent;
+
+        try {
+          updateBtn(btn, 'busy', i18n('upgrade.online.downloading'));
+
+          const asset = releaseData?.assets?.find(a => a.name.startsWith(`${type}_${env}_`) && a.name.endsWith('.bin'));
+          if (!asset) throw new Error(`${i18n('upgrade.online.env_mismatch')}: ${env}`);
+
+          const res = await pFetch(asset.browser_download_url);
+          if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+
+          const reader = res.body.getReader();
+          const totalLength = +res.headers.get('Content-Length');
+          let receivedLength = 0;
+          let chunks = [];
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            receivedLength += value.length;
+
+            if (totalLength) {
+              const pct = Math.round((receivedLength / totalLength) * 100);
+              updateBtn(btn, 'progress', null, pct);
+            }
+          }
+
+          updateBtn(btn, 'busy', i18n('upgrade.online.uploading'));
+
+          await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upgrade');
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                updateBtn(btn, 'progress', null, pct);
+              }
+            };
+            xhr.onload = () => xhr.status === 200 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+            xhr.onerror = () => reject(new Error("Network Error during upload"));
+            const fd = new FormData();
+            fd.append(type, new Blob(chunks, { type: 'application/octet-stream' }), asset.name);
+            xhr.send(fd);
+          });
+
+          updateBtn(btn, 'idle', i18n('button.success'));
+          if (typeof showRebootOverlay === 'function') showRebootOverlay();
+        } catch (e) {
+          console.error("Upgrade error:", e);
+          updateBtn(btn, 'idle', i18n('upgrade.online.failed'));
+          if (e.message) alert(e.message);
+          setTimeout(() => {
+            if (btn) {
+              btn.textContent = oldTxt;
+              btn.disabled = false;
+            }
+          }, 3000);
+        }
+      };
+
+      Object.keys(CONF.btns).forEach(k =>
+        CONF.btns[k].onclick = () => hasUpdate ? upgrade(k) : check()
+      );
+
+      check();
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (typeof Lang !== 'undefined') new Lang(document.getElementById('lang')).build();
+      const safeInit = (fn, selector) => { if (typeof fn === 'function') fn(selector); };
+      safeInit(setupRestoreBackupForm, '#restore');
+      safeInit(setupUpgradeForm, '#upgrade');
+      safeInit(setupResetForm, '#reset-form');
+
+      setupOnlineUpgrade();
+    });
     </script>
   </body>
 </html>
