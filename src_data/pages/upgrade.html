@@ -101,24 +101,20 @@
             <p data-i18n>upgrade.section.upgrade.desc</p>
           </hgroup>
 
+          <div style="margin-bottom: 2rem;">
+          <button type="button" id="online-upgrade-main" class="contrast" data-i18n>upgrade.online.check</button>
+        </div>
+
           <form action="/api/upgrade" id="upgrade">
             <fieldset class="primary">
               <label for="firmware-file">
                 <span data-i18n>upgrade.fw</span>:
-                <div class="grid">
                   <input type="file" name="firmware" id="firmware-file" accept=".bin">
-                  <button type="button" id="online-upgrade-fw" class="outline" data-i18n>upgrade.online.check</button>
-                  <button type="button" class="upgrade-firmware-result hidden" disabled></button>
-                </div>
               </label>
 
               <label for="filesystem-file">
                 <span data-i18n>upgrade.fs</span>:
-                <div class="grid">
                   <input type="file" name="filesystem" id="filesystem-file" accept=".bin">
-                   <button type="button" id="online-upgrade-fs" class="outline" data-i18n>upgrade.online.check</button>
-                  <button type="button" class="upgrade-filesystem-result hidden" disabled></button>
-                </div>
               </label>
             </fieldset>
 
@@ -150,37 +146,34 @@
           const CONF = {
         repo: 'heyggu/OTGateway',
         proxy: 'https://cors.1209177569.workers.dev/?url=',
-        btns: { firmware: document.getElementById('online-upgrade-fw'), filesystem: document.getElementById('online-upgrade-fs') }
+        btn: document.getElementById('online-upgrade-main')
       };
 
-      let env = "", releaseData = null, hasUpdate = false;
+      let env = "", releaseData = null, updates = { firmware: false, filesystem: false };
 
       const pFetch = async (u) => {
-        try { const r = await fetch(CONF.proxy + encodeURIComponent(u)); if (r.ok) return r; } catch (e) { }
+        try {
+          const r = await fetch(CONF.proxy + encodeURIComponent(u));
+          if (r.ok) return r;
+        } catch (e) { }
         return fetch(u);
       };
 
-      const updateBtn = (targetBtn, mode, text = '', progress = 0) => {
-        Object.values(CONF.btns).forEach(b => {
-          b.disabled = (mode !== 'idle');
-          if (mode !== 'idle') {
-            if (!targetBtn || b === targetBtn) b.setAttribute('aria-busy', 'true');
-          } else {
-            b.removeAttribute('aria-busy');
-            b.style.backgroundImage = '';
-          }
-        });
-
-        if (targetBtn) {
-          if (text) targetBtn.textContent = text;
-          if (mode === 'progress') {
-            targetBtn.style.backgroundImage = `linear-gradient(to right, rgba(255,255,255,0.3) ${progress}%, transparent ${progress}%)`;
-          }
+      const updateBtn = (mode, text = '', progress = 0) => {
+        CONF.btn.disabled = (mode !== 'idle');
+        if (mode !== 'idle') CONF.btn.setAttribute('aria-busy', 'true');
+        else {
+          CONF.btn.removeAttribute('aria-busy');
+          CONF.btn.style.backgroundImage = '';
+        }
+        if (text) CONF.btn.textContent = text;
+        if (mode === 'progress') {
+          CONF.btn.style.backgroundImage = `linear-gradient(to right, rgba(255,255,255,0.3) ${progress}%, transparent ${progress}%)`;
         }
       };
 
       const check = async () => {
-        updateBtn(null, 'busy');
+        updateBtn('busy');
         try {
           const [info, rel] = await Promise.all([
             fetch('/api/info').then(r => r.json()),
@@ -192,102 +185,103 @@
           const localVer = info.build?.version?.trim();
           const latestVer = rel.tag_name?.replace(/^v/, '').trim();
 
-          hasUpdate = latestVer && localVer && latestVer !== localVer;
+          const hasNewVer = latestVer && localVer && latestVer !== localVer;
 
-          const tip = hasUpdate
-            ? i18n('upgrade.online.update_available').replace('{version}', latestVer)
-            : i18n('upgrade.online.latest');
+          if (hasNewVer) {
+            updates.firmware = !!rel.assets?.find(a => a.name.startsWith(`firmware_${env}_`) && a.name.endsWith('.bin'));
+            updates.filesystem = !!rel.assets?.find(a => a.name.startsWith(`filesystem_${env}_`) && a.name.endsWith('.bin'));
+          }
 
-          Object.values(CONF.btns).forEach(b => b.textContent = tip);
-          if (hasUpdate) Object.values(CONF.btns).forEach(b => b.classList.remove('outline'));
-
-          updateBtn(null, 'idle');
+          if (updates.firmware || updates.filesystem) {
+            let label = i18n('button.upgrade');
+            if (updates.firmware && updates.filesystem) label += ' (Full)';
+            else if (updates.firmware) label += ' (FW)';
+            else label += ' (FS)';
+            updateBtn('idle', `${label} - v${latestVer}`);
+          } else {
+            updateBtn('idle', i18n('upgrade.online.latest'));
+          }
         } catch (e) {
           console.error("Check failed:", e);
-          Object.values(CONF.btns).forEach(b => b.textContent = i18n('button.error'));
-          updateBtn(null, 'idle');
+          updateBtn('idle', i18n('button.error'));
         }
       };
 
-      const upgrade = async (type) => {
-        if (type === 'filesystem' && !confirm(i18n('upgrade.online.warning_fs'))) return;
+      const downloadAsset = async (type, onProgress) => {
+        const asset = releaseData?.assets?.find(a => a.name.startsWith(`${type}_${env}_`) && a.name.endsWith('.bin'));
+        if (!asset) throw new Error(`${i18n('upgrade.online.env_mismatch')}: ${env} (${type})`);
 
-        const btn = CONF.btns[type];
-        const oldTxt = btn.textContent;
+        const res = await pFetch(asset.browser_download_url);
+        if (!res.ok) throw new Error(`Download ${type} failed: ${res.status}`);
 
+        const reader = res.body.getReader();
+        const total = +res.headers.get('Content-Length');
+        let received = 0, chunks = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total) onProgress(received, total);
+        }
+        return { blob: new Blob(chunks, { type: 'application/octet-stream' }), name: asset.name };
+      };
+
+      const upgrade = async () => {
+        if (updates.filesystem && !confirm(i18n('upgrade.online.warning_fs'))) return;
+
+        const oldTxt = CONF.btn.textContent;
         try {
-          updateBtn(btn, 'busy', i18n('upgrade.online.downloading'));
+          updateBtn('busy', i18n('upgrade.online.downloading'));
 
-          const asset = releaseData?.assets?.find(a => a.name.startsWith(`${type}_${env}_`) && a.name.endsWith('.bin'));
-          if (!asset) throw new Error(`${i18n('upgrade.online.env_mismatch')}: ${env}`);
-
-          const res = await pFetch(asset.browser_download_url);
-          if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-
-          const reader = res.body.getReader();
-          const totalLength = +res.headers.get('Content-Length');
-          let receivedLength = 0;
-          let chunks = [];
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            receivedLength += value.length;
-
-            if (totalLength) {
-              const pct = Math.round((receivedLength / totalLength) * 100);
-              updateBtn(btn, 'progress', null, pct);
-            }
+          const fd = new FormData();
+          if (updates.firmware && updates.filesystem) {
+            let p1 = 0, p2 = 0;
+            const [fw, fs] = await Promise.all([
+              downloadAsset('firmware', (r, t) => { p1 = r / t; updateBtn('progress', null, Math.round(((p1 + p2) / 2) * 100)); }),
+              downloadAsset('filesystem', (r, t) => { p2 = r / t; updateBtn('progress', null, Math.round(((p1 + p2) / 2) * 100)); })
+            ]);
+            fd.append('firmware', fw.blob, fw.name);
+            fd.append('filesystem', fs.blob, fs.name);
+          } else {
+            const type = updates.firmware ? 'firmware' : 'filesystem';
+            const data = await downloadAsset(type, (r, t) => updateBtn('progress', null, Math.round((r / t) * 100)));
+            fd.append(type, data.blob, data.name);
           }
 
-          updateBtn(btn, 'busy', i18n('upgrade.online.uploading'));
+          updateBtn('busy', i18n('upgrade.online.uploading'));
 
           await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/api/upgrade');
             xhr.upload.onprogress = (e) => {
-              if (e.lengthComputable) {
-                const pct = Math.round((e.loaded / e.total) * 100);
-                updateBtn(btn, 'progress', null, pct);
-              }
+              if (e.lengthComputable) updateBtn('progress', null, Math.round((e.loaded / e.total) * 100));
             };
             xhr.onload = () => xhr.status === 200 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
             xhr.onerror = () => reject(new Error("Network Error during upload"));
-            const fd = new FormData();
-            fd.append(type, new Blob(chunks, { type: 'application/octet-stream' }), asset.name);
             xhr.send(fd);
           });
 
-          updateBtn(btn, 'idle', i18n('button.success'));
+          updateBtn('idle', i18n('button.success'));
           if (typeof showRebootOverlay === 'function') showRebootOverlay();
         } catch (e) {
           console.error("Upgrade error:", e);
-          updateBtn(btn, 'idle', i18n('upgrade.online.failed'));
+          updateBtn('idle', i18n('upgrade.online.failed'));
           if (e.message) alert(e.message);
-          setTimeout(() => {
-            if (btn) {
-              btn.textContent = oldTxt;
-              btn.disabled = false;
-            }
-          }, 3000);
+          setTimeout(() => updateBtn('idle', oldTxt), 3000);
         }
       };
 
-      Object.keys(CONF.btns).forEach(k =>
-        CONF.btns[k].onclick = () => hasUpdate ? upgrade(k) : check()
-      );
-
+      CONF.btn.onclick = () => (updates.firmware || updates.filesystem) ? upgrade() : check();
       check();
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
-      if (typeof Lang !== 'undefined') new Lang(document.getElementById('lang')).build();
-      const safeInit = (fn, selector) => { if (typeof fn === 'function') fn(selector); };
-      safeInit(setupRestoreBackupForm, '#restore');
-      safeInit(setupUpgradeForm, '#upgrade');
-      safeInit(setupResetForm, '#reset-form');
-
+    document.addEventListener('DOMContentLoaded', () => {
+      new Lang(document.getElementById('lang')).build();
+      setupRestoreBackupForm('#restore');
+      setupUpgradeForm('#upgrade');
+      setupResetForm('#reset-form');
       setupOnlineUpgrade();
     });
     </script>
